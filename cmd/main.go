@@ -7,19 +7,22 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Arvintian/go-utils/cmdutil"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
 )
 
 type ChatGPTWebServer struct {
-	Host              string `name:"host" usage:"http bind host" default:"0.0.0.0"`
-	Port              int    `name:"port" usage:"http bind port" default:"7080"`
-	BasicAuthUser     string `name:"auth-user" env:"BASIC_USER" usage:"http basic auth user"`
-	BasicAuthPassword string `name:"auth-password" env:"BASIC_PASSWORD" usage:"http basic auth password"`
+	Host              string `name:"host" env:"SERVER_HOST" usage:"http bind host" default:"0.0.0.0"`
+	Port              int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
+	BasicAuthUser     string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
+	BasicAuthPassword string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
 	BackendServer     string `name:"backend-server" default:"http://127.0.0.1:3002" usage:"backend's server endpoint"`
+	BackendAssetsPath string `name:"backend-assets-path" default:"/app/public/assets" usage:"backend's server assets path"`
 	Version           bool   `name:"version" usage:"show version"`
 }
 
@@ -32,6 +35,10 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	if r.BackendServer == "" {
 		fmt.Printf("Version: %s\n\n", Version)
 		return cmd.Help()
+	}
+	gin.SetMode(gin.ReleaseMode)
+	if err := r.updateAssetsFiles(); err != nil {
+		return err
 	}
 	go r.httpServer(cmd.Context())
 
@@ -46,23 +53,30 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	}
 	serverProxy := httputil.NewSingleHostReverseProxy(serverURL)
 
-	//proxy to upstream
+	addr := fmt.Sprintf("%s:%d", r.Host, r.Port)
+	klog.Infof("ChatGPT Web Server on: %s", addr)
 	server := &http.Server{
-		Addr: fmt.Sprintf("%s:%d", r.Host, r.Port),
+		Addr: addr,
 	}
 	entry := gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
 	if len(r.BasicAuthUser) > 0 {
-		entry.Use(gin.BasicAuth(gin.Accounts{
-			r.BasicAuthUser: r.BasicAuthPassword,
-		}))
+		accounts := gin.Accounts{}
+		users := strings.Split(r.BasicAuthUser, ",")
+		passwords := strings.Split(r.BasicAuthPassword, ",")
+		if len(users) != len(passwords) {
+			panic("basic auth setting error")
+		}
+		for i := 0; i < len(users); i++ {
+			accounts[users[i]] = passwords[i]
+		}
+		entry.Use(gin.BasicAuth(accounts))
 	}
 	entry.NoRoute(func(ctx *gin.Context) {
 		serverProxy.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	//listen and serve
 	server.Handler = entry
 	go func(ctx context.Context) {
 		<-ctx.Done()
@@ -75,6 +89,12 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server listen and serve error %v", err)
 	}
+}
+
+func (r *ChatGPTWebServer) updateAssetsFiles() error {
+	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
+	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'知之为知之'}`
+	return editPathFiles(r.BackendAssetsPath, old, new)
 }
 
 func (r *ChatGPTWebServer) ShowVersion() error {
