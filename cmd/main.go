@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ type ChatGPTWebServer struct {
 	BasicAuthUser     string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
 	BasicAuthPassword string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
 	BackendServer     string `name:"backend-server" default:"http://127.0.0.1:3002" usage:"backend's server endpoint"`
+	BackendCMD        string `name:"backend-cmd" default:"pnpm,run,start" usage:"backend's server command"`
 	BackendAssetsPath string `name:"backend-assets-path" default:"/app/public/assets" usage:"backend's server assets path"`
 	Version           bool   `name:"version" usage:"show version"`
 }
@@ -40,6 +43,7 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	if err := r.updateAssetsFiles(); err != nil {
 		return err
 	}
+	go r.startBackend(cmd.Context())
 	go r.httpServer(cmd.Context())
 
 	<-cmd.Context().Done()
@@ -88,6 +92,19 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	}(ctx)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server listen and serve error %v", err)
+	}
+}
+
+func (r *ChatGPTWebServer) startBackend(ctx context.Context) {
+	args := strings.Split(r.BackendCMD, ",")
+	klog.Infof("Start Backend with %v", args)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err := cmd.Run()
+	if err != nil {
+		os.Exit(1)
+		klog.Error(err)
 	}
 }
 
