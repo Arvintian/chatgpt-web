@@ -1,4 +1,4 @@
-FROM arvintian/chatgpt-vue:f95af40
+FROM chenzhaoyu94/chatgpt-web:v2.9.2
 
 ADD dist/server /app/server
 
