@@ -26,6 +26,7 @@ type ChatGPTWebServer struct {
 	BackendServer     string `name:"backend-server" default:"http://127.0.0.1:3002" usage:"backend's server endpoint"`
 	BackendCMD        string `name:"backend-cmd" default:"pnpm,run,start" usage:"backend's server command"`
 	BackendAssetsPath string `name:"backend-assets-path" default:"/app/public/assets" usage:"backend's server assets path"`
+	BackendPath       string `name:"backend-path" default:"/app/public" usage:"backend's server path"`
 	Version           bool   `name:"version" usage:"show version"`
 }
 
@@ -41,6 +42,9 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	}
 	gin.SetMode(gin.ReleaseMode)
 	if err := r.updateAssetsFiles(); err != nil {
+		return err
+	}
+	if err := r.updateTitle(); err != nil {
 		return err
 	}
 	go r.startBackend(cmd.Context())
@@ -65,6 +69,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry := gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
+	apis := entry.Group("/api")
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
 		users := strings.Split(r.BasicAuthUser, ",")
@@ -75,8 +80,11 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		for i := 0; i < len(users); i++ {
 			accounts[users[i]] = passwords[i]
 		}
-		entry.Use(gin.BasicAuth(accounts))
+		apis.Use(gin.BasicAuth(accounts))
 	}
+	apis.POST("/chat-process", func(ctx *gin.Context) {
+		serverProxy.ServeHTTP(ctx.Writer, ctx.Request)
+	})
 	entry.NoRoute(func(ctx *gin.Context) {
 		serverProxy.ServeHTTP(ctx.Writer, ctx.Request)
 	})
@@ -112,6 +120,12 @@ func (r *ChatGPTWebServer) updateAssetsFiles() error {
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
 	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'知之为知之'}`
 	return editPathFiles(r.BackendAssetsPath, old, new)
+}
+
+func (r *ChatGPTWebServer) updateTitle() error {
+	old := `<title>ChatGPT Web</title>`
+	new := `<title>ChatGPT</title>`
+	return editPathFiles(r.BackendPath, old, new)
 }
 
 func (r *ChatGPTWebServer) ShowVersion() error {
