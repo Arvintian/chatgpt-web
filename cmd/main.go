@@ -25,7 +25,6 @@ type ChatGPTWebServer struct {
 	BasicAuthPassword string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
 	BackendServer     string `name:"backend-server" default:"http://127.0.0.1:3002" usage:"backend's server endpoint"`
 	BackendCMD        string `name:"backend-cmd" default:"pnpm,run,start" usage:"backend's server command"`
-	BackendAssetsPath string `name:"backend-assets-path" default:"/app/public/assets" usage:"backend's server assets path"`
 	BackendPath       string `name:"backend-path" default:"/app/public" usage:"backend's server path"`
 	Version           bool   `name:"version" usage:"show version"`
 }
@@ -42,9 +41,6 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	}
 	gin.SetMode(gin.ReleaseMode)
 	if err := r.updateAssetsFiles(); err != nil {
-		return err
-	}
-	if err := r.updateTitle(); err != nil {
 		return err
 	}
 	go r.startBackend(cmd.Context())
@@ -117,15 +113,14 @@ func (r *ChatGPTWebServer) startBackend(ctx context.Context) {
 }
 
 func (r *ChatGPTWebServer) updateAssetsFiles() error {
+	pairs := map[string]string{}
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
 	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'知之为知之'}`
-	return editPathFiles(r.BackendAssetsPath, old, new)
-}
-
-func (r *ChatGPTWebServer) updateTitle() error {
-	old := `<title>ChatGPT Web</title>`
-	new := `<title>ChatGPT</title>`
-	return editPathFiles(r.BackendPath, old, new)
+	pairs[old] = new
+	old = `<title>ChatGPT Web</title>`
+	new = `<title>ChatGPT</title>`
+	pairs[old] = new
+	return replaceFiles(r.BackendPath, pairs)
 }
 
 func (r *ChatGPTWebServer) ShowVersion() error {
