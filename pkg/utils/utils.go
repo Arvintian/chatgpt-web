@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"io/ioutil"
@@ -9,7 +9,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-func replaceInFile(filePath string, targetStr string, replaceStr string) error {
+func ReplaceInFile(filePath string, targetStr string, replaceStr string) error {
 	// 读取文件内容
 	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
@@ -34,7 +34,7 @@ func replaceInFile(filePath string, targetStr string, replaceStr string) error {
 	return nil
 }
 
-func replaceFiles(rootDir string, replacePairs map[string]string) error {
+func ReplaceFiles(rootDir string, replacePairs map[string]string) error {
 	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -45,7 +45,7 @@ func replaceFiles(rootDir string, replacePairs map[string]string) error {
 		}
 		// 处理文件
 		for targetStr, replaceStr := range replacePairs {
-			err = replaceInFile(path, targetStr, replaceStr)
+			err = ReplaceInFile(path, targetStr, replaceStr)
 			if err != nil {
 				return err
 			}

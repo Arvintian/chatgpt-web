@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/Arvintian/chatgpt-web/pkg/controllers"
+	"github.com/Arvintian/chatgpt-web/pkg/utils"
 	"github.com/Arvintian/go-utils/cmdutil"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
@@ -19,14 +17,20 @@ import (
 )
 
 type ChatGPTWebServer struct {
-	Host              string `name:"host" env:"SERVER_HOST" usage:"http bind host" default:"0.0.0.0"`
-	Port              int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
-	BasicAuthUser     string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
-	BasicAuthPassword string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
-	BackendServer     string `name:"backend-server" default:"http://127.0.0.1:3002" usage:"backend's server endpoint"`
-	BackendCMD        string `name:"backend-cmd" default:"pnpm,run,start" usage:"backend's server command"`
-	BackendPath       string `name:"backend-path" default:"/app/public" usage:"backend's server path"`
-	Version           bool   `name:"version" usage:"show version"`
+	Host                   string `name:"host" env:"SERVER_HOST" usage:"http bind host" default:"0.0.0.0"`
+	Port                   int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
+	BasicAuthUser          string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
+	BasicAuthPassword      string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
+	FrontendPath           string `name:"frontend-path" default:"/app/public" usage:"frontend path"`
+	SocksProxy             string `name:"socks-proxy" env:"SOCKS_PROXY" usage:"socks proxy url"`
+	OpenAIKey              string `name:"openapi-key" env:"OPENAI_KEY" usage:"openai key"`
+	OpenAIBaseURL          string `name:"openapi-base-url" env:"OPENAI_BASE_URL" default:"https://api.openai.com/v1" usage:"openai base url"`
+	OpenAIModel            string `name:"openai-model" env:"OPENAI_MODEL" default:"gpt-3.5-turbo-0301" usage:"openai params model"`
+	OpenAIMaxTokens        int    `name:"openai-max-tokens" env:"OPENAI_MAX_TOKENS" default:"4096" usage:"openai params max-tokens"`
+	OpenAITemperature      int    `name:"openai-temperature" env:"OPENAI_TEMPERATURE" default:"80" usage:"openai params temperature"`
+	OpenAIPresencePenalty  int    `name:"openai-presence-penalty" env:"OPENAI_PRESENCE_PENALTY" default:"100" usage:"openai params presence-penalty"`
+	OpenAIFrequencyPenalty int    `name:"openai-frequency-penalty" env:"OPENAI_FREQUENCY_PENALTY" default:"0" usage:"openai params frequency-penalty"`
+	Version                bool   `name:"version" usage:"show version"`
 }
 
 var Version = "0.0.0-dev"
@@ -35,15 +39,10 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	if r.Version {
 		return r.ShowVersion()
 	}
-	if r.BackendServer == "" {
-		fmt.Printf("Version: %s\n\n", Version)
-		return cmd.Help()
-	}
 	gin.SetMode(gin.ReleaseMode)
 	if err := r.updateAssetsFiles(); err != nil {
 		return err
 	}
-	go r.startBackend(cmd.Context())
 	go r.httpServer(cmd.Context())
 
 	<-cmd.Context().Done()
@@ -51,11 +50,16 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
-	serverURL, err := url.Parse(r.BackendServer)
+	chatService, err := controllers.NewChatService(r.OpenAIKey, r.OpenAIBaseURL, r.SocksProxy, controllers.ChatCompletionParams{
+		Model:            r.OpenAIModel,
+		MaxTokens:        r.OpenAIMaxTokens,
+		Temperature:      float32(r.OpenAITemperature) / 100.0,
+		PresencePenalty:  float32(r.OpenAIPresencePenalty) / 100.0,
+		FrequencyPenalty: float32(r.OpenAIFrequencyPenalty) / 100.0,
+	})
 	if err != nil {
-		log.Fatal(err)
+		klog.Fatal(err)
 	}
-	serverProxy := httputil.NewSingleHostReverseProxy(serverURL)
 
 	addr := fmt.Sprintf("%s:%d", r.Host, r.Port)
 	klog.Infof("ChatGPT Web Server on: %s", addr)
@@ -78,11 +82,18 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		}
 		apis.Use(gin.BasicAuth(accounts))
 	}
-	apis.POST("/chat-process", func(ctx *gin.Context) {
-		serverProxy.ServeHTTP(ctx.Writer, ctx.Request)
+	apis.POST("/chat-process", chatService.ChatProcess)
+	apis.POST("/config", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status": "Success",
+			"data": map[string]string{
+				"apiModel":   "ChatGPTAPI",
+				"socksProxy": r.SocksProxy,
+			},
+		})
 	})
 	entry.NoRoute(func(ctx *gin.Context) {
-		serverProxy.ServeHTTP(ctx.Writer, ctx.Request)
+		http.FileServer(http.Dir(r.FrontendPath)).ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
 	server.Handler = entry
@@ -99,28 +110,15 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	}
 }
 
-func (r *ChatGPTWebServer) startBackend(ctx context.Context) {
-	args := strings.Split(r.BackendCMD, ",")
-	klog.Infof("Start Backend with %v", args)
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	err := cmd.Run()
-	if err != nil {
-		os.Exit(1)
-		klog.Error(err)
-	}
-}
-
 func (r *ChatGPTWebServer) updateAssetsFiles() error {
 	pairs := map[string]string{}
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
-	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'知之为知之'}`
+	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'Star on <a href="https://github.com/Arvintian/chatgpt-web" class="text-blue-500" target="_blank" >Github</a>'}`
 	pairs[old] = new
 	old = `<title>ChatGPT Web</title>`
 	new = `<title>ChatGPT</title>`
 	pairs[old] = new
-	return replaceFiles(r.BackendPath, pairs)
+	return utils.ReplaceFiles(r.FrontendPath, pairs)
 }
 
 func (r *ChatGPTWebServer) ShowVersion() error {
