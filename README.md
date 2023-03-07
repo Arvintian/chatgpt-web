@@ -22,6 +22,6 @@ arvintian/chatgpt-web
 
 ## 待实现
 
-[done] 支持认证
+[√] 支持认证
 
-[ ] 替换NodeAPI对接ChatGPT API
+[×] 替换NodeAPI对接ChatGPT API
