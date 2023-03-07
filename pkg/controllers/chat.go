@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/Arvintian/chatgpt-web/pkg/tokenizer"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	ccache "github.com/karlseguin/ccache/v3"
@@ -19,7 +20,8 @@ import (
 )
 
 const (
-	ChatSessionTTL = 30 * time.Minute
+	ChatSessionTTL        = 30 * time.Minute
+	ChatMinResponseTokens = 1000
 )
 
 type ChatService struct {
@@ -112,7 +114,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: messageID,
 	}
 
-	messages, err := chat.buildMessage(payload)
+	messages, numTokens, err := chat.buildMessage(payload)
 	if err != nil {
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
@@ -121,11 +123,12 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		})
 	}
 
+	//klog.Infof("send message %d tokens, set call model %d max tokens", numTokens, chat.params.MaxTokens-numTokens)
+
 	stream, err := chat.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
-		Model:    chat.params.Model,
-		Messages: messages,
-		//MaxTokens:        chat.params.MaxTokens,
-		MaxTokens:        1000,
+		Model:            chat.params.Model,
+		Messages:         messages,
+		MaxTokens:        chat.params.MaxTokens - numTokens,
 		Temperature:      chat.params.Temperature,
 		PresencePenalty:  chat.params.PresencePenalty,
 		FrequencyPenalty: chat.params.FrequencyPenalty,
@@ -211,19 +214,24 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	}
 }
 
-func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, error) {
+func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, error) {
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
 	messages = append(messages, chat.systemMessage)
 	systemMessageOffset := len(messages)
-	nextMessages := append(messages, openai.ChatCompletionMessage{
+	chatMessage := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
 		Content: payload.Prompt,
 		Name:    payload.Options.Name,
-	})
+	}
+	nextMessages := append(messages, chatMessage)
+	numTokens, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
+	if err != nil {
+		return nil, 0, err
+	}
+	numTokens += 59 // add sum the system message token count
 	for {
 		messages = nextMessages
-		// TODO count tokens
 		if parentMessageId == "" {
 			break
 		}
@@ -231,16 +239,23 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 		if !ok {
 			break
 		}
-		nextMessages = append(nextMessages[:systemMessageOffset], append([]openai.ChatCompletionMessage{
-			{
-				Role:    parentMessage.Role,
-				Content: parentMessage.Text,
-				Name:    parentMessage.Name,
-			},
-		}, nextMessages[systemMessageOffset:]...)...)
+		parentCompletioMessage := openai.ChatCompletionMessage{
+			Role:    parentMessage.Role,
+			Content: parentMessage.Text,
+			Name:    parentMessage.Name,
+		}
+		tokenCount, err := tokenizer.GetTokenCount(parentCompletioMessage, chat.params.Model)
+		if err != nil {
+			return nil, 0, err
+		}
+		if (numTokens + tokenCount) >= (chat.params.MaxTokens - ChatMinResponseTokens) {
+			break
+		}
+		numTokens += tokenCount
+		nextMessages = append(nextMessages[:systemMessageOffset], append([]openai.ChatCompletionMessage{parentCompletioMessage}, nextMessages[systemMessageOffset:]...)...)
 		parentMessageId = parentMessage.ParentMessageId
 	}
-	return messages, nil
+	return messages, numTokens, nil
 }
 
 func (chat *ChatService) getMessageByID(id string) (ChatMessage, bool) {
