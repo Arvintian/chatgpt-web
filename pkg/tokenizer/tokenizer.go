@@ -27,7 +27,7 @@ func GetTokenCount(message openai.ChatCompletionMessage, model string) (int, err
 	return info.Count, nil
 }
 
-func postJSON(url string, requestData interface{}, responseData interface{}) error {
+func postJSON(url string, requestData *openai.ChatCompletionMessage, responseData *tokenInfo) error {
 	requestBody, err := json.Marshal(requestData)
 	if err != nil {
 		return err
