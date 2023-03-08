@@ -14,14 +14,21 @@ docker run --restart unless-stopped -d --log-opt max-size=50m -p 7080:7080 \
 arvintian/chatgpt-web
 ```
 
-- 兼容[ChatGPT Web](https://github.com/Chanzhaoyu/chatgpt-web#%E4%BD%BF%E7%94%A8-docker)所有环境变量
 - SERVER_PORT 服务端口,默认7080
 - SERVER_HOST 服务监听地址,默认0.0.0.0
+- SOCKS_PROXY socks代理URL,例如socks5://user:password@127.0.0.1:1080
 - BASIC_AUTH_USER 认证用户,多用户英文逗号分隔
 - BASIC_AUTH_PASSWORD 认证用户密码,多用户英文逗号分隔
+- CHAT_SESSION_TTL 会话上下文保持时间,默认15分钟
+- CHAT_MIN_RESPONSE_TOKENS 预留给会话响应的token数,可能导致截断最久的上下文,默认1000
+- OPENAI_KEY openai api key,参考openai文档
+- OPENAI_BASE_URL openai api base url,默认https://api.openai.com/v1
+- OPENAI_MODEL 调用模型,默认gpt-3.5-turbo-0301
+- OPENAI_MAX_TOKENS 模型max_tokens参数,参考OpenAI文档
+- OPENAI_TEMPERATURE 模型temperature参数,参考OpenAI文档
+- OPENAI_PRESENCE_PENALTY 模型presence_penalty参数,参考OpenAI文档
+- OPENAI_FREQUENCY_PENALTY 模型frequency_penalty参数,参考OpenAI文档
 
-## 待实现
+更详细参数参考: [启动函数](https://github.com/Arvintian/chatgpt-web/blob/main/cmd/main.go#L21)
 
-[√] 支持认证
-
-[×] 替换NodeAPI对接ChatGPT API
+PS: 模型float32参数使用(整型/100)设置,例如: temperature设置0.8,需要设置为80
