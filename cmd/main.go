@@ -118,16 +118,16 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 }
 
 func (r *ChatGPTWebServer) startTokenizer(ctx context.Context) {
-	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
-	if err != nil {
-		klog.Error(err)
-		os.Exit(1)
-	}
+	// devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
+	// if err != nil {
+	// 	klog.Error(err)
+	// 	os.Exit(1)
+	// }
 	args := strings.Split("nuxt --module tokenizer.py --workers 2", " ")
 	klog.Infof("Start Tokenizer with %v", args)
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stderr = os.Stderr
-	cmd.Stdout = devnull
+	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
 		klog.Error(err)
 		os.Exit(1)

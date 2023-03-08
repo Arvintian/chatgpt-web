@@ -54,6 +54,7 @@ type ChatMessage struct {
 	Role            string `json:"role"`
 	Name            string `json:"name"`
 	Delta           string `json:"delta"`
+	TokenCount      int    `json:"tokenCount"`
 	ParentMessageId string `json:"parentMessageId"`
 }
 
@@ -104,8 +105,6 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: payload.Options.ParentMessageId,
 	}
 
-	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
-
 	result := ChatMessage{
 		ID:              uuid.New().String(),
 		Role:            openai.ChatMessageRoleAssistant,
@@ -113,7 +112,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: messageID,
 	}
 
-	messages, numTokens, err := chat.buildMessage(payload)
+	messages, numTokens, tokenCount, err := chat.buildMessage(payload)
 	if err != nil {
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
@@ -121,6 +120,9 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 			"data":    nil,
 		})
 	}
+
+	message.TokenCount = tokenCount
+	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
 
 	//klog.Infof("send message %d tokens, set completion %d max tokens", numTokens, chat.params.MaxTokens-numTokens)
 
@@ -161,7 +163,18 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	for {
 		rsp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
+			go func() {
+				tokenCount, err := tokenizer.GetTokenCount(openai.ChatCompletionMessage{
+					Role:    result.Role,
+					Content: result.Text,
+					Name:    result.Name,
+				}, chat.params.Model)
+				if err != nil {
+					klog.Error(err)
+				}
+				result.TokenCount = tokenCount
+				chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
+			}()
 			return
 		}
 
@@ -211,7 +224,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	}
 }
 
-func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, error) {
+func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, int, error) {
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
 	chatMessage := openai.ChatCompletionMessage{
@@ -220,14 +233,14 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 		Name:    payload.Options.Name,
 	}
 	messages = append(messages, chatMessage)
-	numTokens, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
+	tokenCount, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
-	if numTokens >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
-		return nil, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, numTokens)
+	if tokenCount >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
+		return nil, 0, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, tokenCount)
 	}
-	numTokens += ChatPrimedTokens
+	numTokens := tokenCount + ChatPrimedTokens
 	for {
 		if parentMessageId == "" {
 			break
@@ -241,19 +254,15 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 			Content: parentMessage.Text,
 			Name:    parentMessage.Name,
 		}
-		tokenCount, err := tokenizer.GetTokenCount(parentCompletioMessage, chat.params.Model)
-		if err != nil {
-			return nil, 0, err
-		}
-		if (numTokens + tokenCount) >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
+		if (numTokens + parentMessage.TokenCount) >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
 			break
 		}
-		numTokens += tokenCount
+		numTokens += parentMessage.TokenCount
 		messages = append(messages, parentCompletioMessage)
 		parentMessageId = parentMessage.ParentMessageId
 	}
 	utils.Reverse(messages)
-	return messages, numTokens, nil
+	return messages, numTokens, tokenCount, nil
 }
 
 func (chat *ChatService) getMessageByID(id string) (ChatMessage, bool) {
