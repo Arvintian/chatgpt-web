@@ -1,17 +1,16 @@
 package controllers
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/Arvintian/chatgpt-web/pkg/tokenizer"
+	"github.com/Arvintian/chatgpt-web/pkg/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	ccache "github.com/karlseguin/ccache/v3"
@@ -20,18 +19,24 @@ import (
 )
 
 const (
-	ChatSessionTTL        = 30 * time.Minute
-	ChatMinResponseTokens = 1000
+	ChatPrimedTokens = 2
 )
 
 type ChatService struct {
-	client        *openai.Client
-	store         *ccache.Cache[ChatMessage]
-	params        ChatCompletionParams
-	systemMessage openai.ChatCompletionMessage
+	client *openai.Client
+	store  *ccache.Cache[ChatMessage]
+	params ChatCompletionParams
 }
 
-type ChatCompletionParams openai.ChatCompletionRequest
+type ChatCompletionParams struct {
+	Model                 string        `json:"model"`
+	MaxTokens             int           `json:"max_tokens,omitempty"`
+	Temperature           float32       `json:"temperature,omitempty"`
+	PresencePenalty       float32       `json:"presence_penalty,omitempty"`
+	FrequencyPenalty      float32       `json:"frequency_penalty,omitempty"`
+	ChatSessionTTL        time.Duration `json:"chat_session_ttl"`
+	ChatMinResponseTokens int           `json:"chat_min_response_tokens"`
+}
 
 type ChatMessageRequest struct {
 	Prompt  string                    `json:"prompt"`
@@ -44,13 +49,12 @@ type ChatMessageRequestOptions struct {
 }
 
 type ChatMessage struct {
-	ID              string                              `json:"id"`
-	Text            string                              `json:"text"`
-	Role            string                              `json:"role"`
-	Name            string                              `json:"name"`
-	Delta           string                              `json:"delta"`
-	Detail          openai.ChatCompletionStreamResponse `json:"detail"`
-	ParentMessageId string                              `json:"parentMessageId"`
+	ID              string `json:"id"`
+	Text            string `json:"text"`
+	Role            string `json:"role"`
+	Name            string `json:"name"`
+	Delta           string `json:"delta"`
+	ParentMessageId string `json:"parentMessageId"`
 }
 
 func NewChatService(apiKey string, baseURL string, socksProxy string, params ChatCompletionParams) (*ChatService, error) {
@@ -71,15 +75,10 @@ func NewChatService(apiKey string, baseURL string, socksProxy string, params Cha
 		}
 		klog.Infof("use sock proxy: %s", proxyUrl)
 	}
-	currentDate := time.Now().Format("2006-01-02")
 	chat := ChatService{
 		client: openai.NewClientWithConfig(config),
 		params: params,
 		store:  ccache.New(ccache.Configure[ChatMessage]()),
-		systemMessage: openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: fmt.Sprintf(`You are ChatGPT, a large language model trained by OpenAI. Answer as concisely as possible.\nKnowledge cutoff: 2021-09-01\nCurrent date: %s`, currentDate),
-		},
 	}
 	return &chat, nil
 }
@@ -105,7 +104,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: payload.Options.ParentMessageId,
 	}
 
-	chat.store.Set(messageID, message, ChatSessionTTL)
+	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
 
 	result := ChatMessage{
 		ID:              uuid.New().String(),
@@ -123,7 +122,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		})
 	}
 
-	//klog.Infof("send message %d tokens, set call model %d max tokens", numTokens, chat.params.MaxTokens-numTokens)
+	//klog.Infof("send message %d tokens, set completion %d max tokens", numTokens, chat.params.MaxTokens-numTokens)
 
 	stream, err := chat.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
 		Model:            chat.params.Model,
@@ -148,7 +147,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 
 	resp := stream.GetResponse()
 	if resp.StatusCode != 200 {
-		bts, _ := ioutil.ReadAll(resp.Body)
+		bts, _ := io.ReadAll(resp.Body)
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
 			"message": fmt.Sprintf("%v", string(bts)),
@@ -162,7 +161,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	for {
 		rsp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
-			chat.store.Set(result.ID, result, ChatSessionTTL)
+			chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
 			return
 		}
 
@@ -184,7 +183,6 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 			content := rsp.Choices[0].Delta.Content
 			result.Delta = content
 			result.Text += content
-			result.Detail = rsp
 		}
 
 		bts, err := json.Marshal(result)
@@ -198,40 +196,39 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 			return
 		}
 
-		out := bytes.Buffer{}
 		if !firstChunk {
-			out.Write([]byte("\n"))
+			ctx.Writer.Write([]byte("\n"))
+		} else {
+			firstChunk = false
 		}
-		out.Write(bts)
 
-		if _, err := ctx.Writer.Write(out.Bytes()); err != nil {
+		if _, err := ctx.Writer.Write(bts); err != nil {
 			klog.Error(err)
 			return
 		}
 
 		ctx.Writer.Flush()
-		firstChunk = false
 	}
 }
 
 func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, error) {
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
-	messages = append(messages, chat.systemMessage)
-	systemMessageOffset := len(messages)
 	chatMessage := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
 		Content: payload.Prompt,
 		Name:    payload.Options.Name,
 	}
-	nextMessages := append(messages, chatMessage)
+	messages = append(messages, chatMessage)
 	numTokens, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
 	if err != nil {
 		return nil, 0, err
 	}
-	numTokens += 59 // add sum the system message token count
+	if numTokens >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
+		return nil, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, numTokens)
+	}
+	numTokens += ChatPrimedTokens
 	for {
-		messages = nextMessages
 		if parentMessageId == "" {
 			break
 		}
@@ -248,13 +245,14 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 		if err != nil {
 			return nil, 0, err
 		}
-		if (numTokens + tokenCount) >= (chat.params.MaxTokens - ChatMinResponseTokens) {
+		if (numTokens + tokenCount) >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
 			break
 		}
 		numTokens += tokenCount
-		nextMessages = append(nextMessages[:systemMessageOffset], append([]openai.ChatCompletionMessage{parentCompletioMessage}, nextMessages[systemMessageOffset:]...)...)
+		messages = append(messages, parentCompletioMessage)
 		parentMessageId = parentMessage.ParentMessageId
 	}
+	utils.Reverse(messages)
 	return messages, numTokens, nil
 }
 

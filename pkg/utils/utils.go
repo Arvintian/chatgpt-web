@@ -57,3 +57,9 @@ func ReplaceFiles(rootDir string, replacePairs map[string]string) error {
 	}
 	return nil
 }
+
+func Reverse[S ~[]E, E any](s S) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+}

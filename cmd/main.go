@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -21,8 +23,10 @@ type ChatGPTWebServer struct {
 	Port                   int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
 	BasicAuthUser          string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
 	BasicAuthPassword      string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
-	FrontendPath           string `name:"frontend-path" default:"/app/public" usage:"frontend path"`
+	FrontendPath           string `name:"frontend-path" env:"FRONTEND_PATH" default:"/app/public" usage:"frontend path"`
 	SocksProxy             string `name:"socks-proxy" env:"SOCKS_PROXY" usage:"socks proxy url"`
+	ChatSessionTTL         int    `name:"chat-session-ttl" env:"CHAT_SESSION_TTL" default:"15" usage:"chat session ttl minute"`
+	ChatMinResponseTokens  int    `name:"chat-min-response-tokens" env:"CHAT_MIN_RESPONSE_TOKENS" default:"1000" usage:"chat min response tokens"`
 	OpenAIKey              string `name:"openapi-key" env:"OPENAI_KEY" usage:"openai key"`
 	OpenAIBaseURL          string `name:"openapi-base-url" env:"OPENAI_BASE_URL" default:"https://api.openai.com/v1" usage:"openai base url"`
 	OpenAIModel            string `name:"openai-model" env:"OPENAI_MODEL" default:"gpt-3.5-turbo-0301" usage:"openai params model"`
@@ -43,6 +47,7 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 	if err := r.updateAssetsFiles(); err != nil {
 		return err
 	}
+	go r.startTokenizer(cmd.Context())
 	go r.httpServer(cmd.Context())
 
 	<-cmd.Context().Done()
@@ -51,11 +56,13 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 
 func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	chatService, err := controllers.NewChatService(r.OpenAIKey, r.OpenAIBaseURL, r.SocksProxy, controllers.ChatCompletionParams{
-		Model:            r.OpenAIModel,
-		MaxTokens:        r.OpenAIMaxTokens,
-		Temperature:      float32(r.OpenAITemperature) / 100.0,
-		PresencePenalty:  float32(r.OpenAIPresencePenalty) / 100.0,
-		FrequencyPenalty: float32(r.OpenAIFrequencyPenalty) / 100.0,
+		Model:                 r.OpenAIModel,
+		MaxTokens:             r.OpenAIMaxTokens,
+		Temperature:           float32(r.OpenAITemperature) / 100.0,
+		PresencePenalty:       float32(r.OpenAIPresencePenalty) / 100.0,
+		FrequencyPenalty:      float32(r.OpenAIFrequencyPenalty) / 100.0,
+		ChatSessionTTL:        time.Duration(r.ChatSessionTTL) * time.Minute,
+		ChatMinResponseTokens: r.ChatMinResponseTokens,
 	})
 	if err != nil {
 		klog.Fatal(err)
@@ -110,13 +117,27 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	}
 }
 
+func (r *ChatGPTWebServer) startTokenizer(ctx context.Context) {
+	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
+	if err != nil {
+		klog.Error(err)
+		os.Exit(1)
+	}
+	args := strings.Split("nuxt --module tokenizer.py --workers 2", " ")
+	klog.Infof("Start Tokenizer with %v", args)
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = devnull
+	if err := cmd.Run(); err != nil {
+		klog.Error(err)
+		os.Exit(1)
+	}
+}
+
 func (r *ChatGPTWebServer) updateAssetsFiles() error {
 	pairs := map[string]string{}
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
 	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'Star on <a href="https://github.com/Arvintian/chatgpt-web" class="text-blue-500" target="_blank" >Github</a>'}`
-	pairs[old] = new
-	old = `<title>ChatGPT Web</title>`
-	new = `<title>ChatGPT</title>`
 	pairs[old] = new
 	return utils.ReplaceFiles(r.FrontendPath, pairs)
 }
