@@ -77,7 +77,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry := gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
-	apis := entry.Group("/api")
+	apis := entry.Group("/")
 	apis.Use(middlewares.RateLimitMiddleware(1, 1))
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
@@ -101,7 +101,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 			},
 		})
 	})
-	entry.POST("/session", func(ctx *gin.Context) {
+	apis.POST("/session", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status":  "Success",
 			"message": "",
