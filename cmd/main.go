@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Arvintian/chatgpt-web/pkg/controllers"
+	"github.com/Arvintian/chatgpt-web/pkg/middlewares"
 	"github.com/Arvintian/chatgpt-web/pkg/utils"
 	"github.com/Arvintian/go-utils/cmdutil"
 	"github.com/gin-gonic/gin"
@@ -77,6 +78,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
 	apis := entry.Group("/api")
+	apis.Use(middlewares.RateLimitMiddleware(1, 1))
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
 		users := strings.Split(r.BasicAuthUser, ",")

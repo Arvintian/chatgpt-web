@@ -5,8 +5,11 @@ go 1.19
 require (
 	github.com/Arvintian/go-utils v0.0.0-20221012040808-2e61c0c3eece
 	github.com/gin-gonic/gin v1.9.0
+	github.com/google/uuid v1.3.0
+	github.com/karlseguin/ccache/v3 v3.0.3
 	github.com/sashabaranov/go-openai v1.4.2
 	github.com/spf13/cobra v1.6.0
+	golang.org/x/time v0.3.0
 	k8s.io/klog/v2 v2.60.1
 )
 
@@ -19,10 +22,8 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.11.2 // indirect
 	github.com/goccy/go-json v0.10.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/karlseguin/ccache/v3 v3.0.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
