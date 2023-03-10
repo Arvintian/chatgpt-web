@@ -101,6 +101,15 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 			},
 		})
 	})
+	entry.POST("/session", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status":  "Success",
+			"message": "",
+			"data": gin.H{
+				"auth": false,
+			},
+		})
+	})
 	entry.NoRoute(func(ctx *gin.Context) {
 		http.FileServer(http.Dir(r.FrontendPath)).ServeHTTP(ctx.Writer, ctx.Request)
 	})
