@@ -1,4 +1,4 @@
-FROM chenzhaoyu94/chatgpt-web:v2.10.2 as frontend
+FROM chenzhaoyu94/chatgpt-web:v2.10.5 as frontend
 
 FROM python:3.10-alpine
 
