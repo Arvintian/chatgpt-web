@@ -232,6 +232,7 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
 	tokenCount := 0
+	var err error
 	if len(payload.Prompt) > 0 {
 		chatMessage := openai.ChatCompletionMessage{
 			Role:    openai.ChatMessageRoleUser,
@@ -239,7 +240,7 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 			Name:    payload.Options.Name,
 		}
 		messages = append(messages, chatMessage)
-		tokenCount, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
+		tokenCount, err = tokenizer.GetTokenCount(chatMessage, chat.params.Model)
 		if err != nil {
 			return nil, 0, 0, err
 		}
