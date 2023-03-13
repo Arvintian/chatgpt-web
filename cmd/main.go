@@ -78,7 +78,6 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
 	apis := entry.Group("/")
-	apis.Use(middlewares.RateLimitMiddleware(1, 1))
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
 		users := strings.Split(r.BasicAuthUser, ",")
@@ -91,7 +90,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		}
 		apis.Use(gin.BasicAuth(accounts))
 	}
-	apis.POST("/chat-process", chatService.ChatProcess)
+	apis.POST("/chat-process", middlewares.RateLimitMiddleware(1, 1), chatService.ChatProcess)
 	apis.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
