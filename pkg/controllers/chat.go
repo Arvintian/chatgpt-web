@@ -49,13 +49,14 @@ type ChatMessageRequestOptions struct {
 }
 
 type ChatMessage struct {
-	ID              string `json:"id"`
-	Text            string `json:"text"`
-	Role            string `json:"role"`
-	Name            string `json:"name"`
-	Delta           string `json:"delta"`
-	TokenCount      int    `json:"tokenCount"`
-	ParentMessageId string `json:"parentMessageId"`
+	ID              string                              `json:"id"`
+	Text            string                              `json:"text"`
+	Role            string                              `json:"role"`
+	Name            string                              `json:"name"`
+	Delta           string                              `json:"delta"`
+	Detail          openai.ChatCompletionStreamResponse `json:"detail"`
+	TokenCount      int                                 `json:"tokenCount"`
+	ParentMessageId string                              `json:"parentMessageId"`
 }
 
 func NewChatService(apiKey string, baseURL string, socksProxy string, params ChatCompletionParams) (*ChatService, error) {
@@ -195,7 +196,10 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		if len(rsp.Choices) > 0 {
 			content := rsp.Choices[0].Delta.Content
 			result.Delta = content
-			result.Text += content
+			if len(content) > 0 {
+				result.Text += content
+			}
+			result.Detail = rsp
 		}
 
 		bts, err := json.Marshal(result)
@@ -227,18 +231,21 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, int, error) {
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
-	chatMessage := openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: payload.Prompt,
-		Name:    payload.Options.Name,
-	}
-	messages = append(messages, chatMessage)
-	tokenCount, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	if tokenCount >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
-		return nil, 0, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, tokenCount)
+	tokenCount := 0
+	if len(payload.Prompt) > 0 {
+		chatMessage := openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: payload.Prompt,
+			Name:    payload.Options.Name,
+		}
+		messages = append(messages, chatMessage)
+		tokenCount, err := tokenizer.GetTokenCount(chatMessage, chat.params.Model)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if tokenCount >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
+			return nil, 0, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, tokenCount)
+		}
 	}
 	numTokens := tokenCount + ChatPrimedTokens
 	for {
