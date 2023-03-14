@@ -153,6 +153,9 @@ func (r *ChatGPTWebServer) updateAssetsFiles() error {
 	old = `{}.VITE_GLOB_OPEN_LONG_REPLY`
 	new = `{VITE_GLOB_OPEN_LONG_REPLY:"true"}.VITE_GLOB_OPEN_LONG_REPLY`
 	pairs[old] = new
+	old = `<link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>`
+	new = ``
+	pairs[old] = new
 	return utils.ReplaceFiles(r.FrontendPath, pairs)
 }
 
