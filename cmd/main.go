@@ -88,9 +88,10 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		for i := 0; i < len(users); i++ {
 			accounts[users[i]] = passwords[i]
 		}
-		apis.Use(gin.BasicAuth(accounts))
+		apis.POST("/chat-process", gin.BasicAuth(accounts), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
+	} else {
+		apis.POST("/chat-process", middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
 	}
-	apis.POST("/chat-process", middlewares.RateLimitMiddleware(1, 1), chatService.ChatProcess)
 	apis.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
