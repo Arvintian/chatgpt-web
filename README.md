@@ -1,5 +1,7 @@
 # ChatGPT-Web
 
+[English](https://github.com/Arvintian/chatgpt-web/blob/main/README_en.md)
+
 使用[Gin](https://github.com/gin-gonic/gin)搭建ChatGPT服务,使用[ChatGPT Web](https://github.com/Chanzhaoyu/chatgpt-web)作为前端
 
 ## Usage
