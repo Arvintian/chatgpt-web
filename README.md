@@ -10,7 +10,7 @@
 
 ```
 docker run --restart unless-stopped -d --log-opt max-size=50m -p 7080:7080 \
--e OPENAI_API_KEY=openai-key \
+-e OPENAI_KEY=openai-key \
 -e BASIC_AUTH_USER=user1,user2 \
 -e BASIC_AUTH_PASSWORD=passwd1,passwd2 \
 arvintian/chatgpt-web
