@@ -2,6 +2,10 @@ REGISTRY = arvintian
 PROJECT = chatgpt-web
 GIT_VERSION = $(shell git rev-parse --short HEAD)
 
+
+build-local:
+	go build -v --ldflags="-w -X main.Version=$(GIT_VERSION)" -o dist/server cmd/*.go
+
 .PHONY: build
 build:
 	mkdir -p dist && docker run --rm -ti -e GOPROXY=https://goproxy.cn,direct -v `pwd`:/app -w /app golang:1.19-alpine \

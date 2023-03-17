@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -74,10 +76,10 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	server := &http.Server{
 		Addr: addr,
 	}
-	entry := gin.New()
+	entry, proxy := gin.New(), gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
-	apis := entry.Group("/")
+	chat := entry.Group("/")
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
 		users := strings.Split(r.BasicAuthUser, ",")
@@ -88,11 +90,11 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		for i := 0; i < len(users); i++ {
 			accounts[users[i]] = passwords[i]
 		}
-		apis.POST("/chat-process", gin.BasicAuth(accounts), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
+		chat.POST("/chat-process", gin.BasicAuth(accounts), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
 	} else {
-		apis.POST("/chat-process", middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
+		chat.POST("/chat-process", middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
 	}
-	apis.POST("/config", func(ctx *gin.Context) {
+	chat.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
 			"data": map[string]string{
@@ -101,7 +103,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 			},
 		})
 	})
-	apis.POST("/session", func(ctx *gin.Context) {
+	chat.POST("/session", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status":  "Success",
 			"message": "",
@@ -110,8 +112,28 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 			},
 		})
 	})
-	entry.NoRoute(func(ctx *gin.Context) {
+	upstreamURL, err := url.Parse(strings.TrimSuffix(r.OpenAIBaseURL, "/v1"))
+	if err != nil {
+		klog.Fatal(err)
+	}
+	proxyUrl, err := url.Parse(r.SocksProxy)
+	if err != nil {
+		klog.Fatal(err)
+	}
+	upstream := httputil.NewSingleHostReverseProxy(upstreamURL)
+	upstream.Transport = &http.Transport{
+		Proxy: http.ProxyURL(proxyUrl),
+	}
+	apis := proxy.Group("/v1")
+	apis.Any("/*relativePath", func(ctx *gin.Context) {
+		ctx.Request.Host = upstreamURL.Host
+		upstream.ServeHTTP(ctx.Writer, ctx.Request)
+	})
+	proxy.NoRoute(func(ctx *gin.Context) {
 		http.FileServer(http.Dir(r.FrontendPath)).ServeHTTP(ctx.Writer, ctx.Request)
+	})
+	entry.NoRoute(func(ctx *gin.Context) {
+		proxy.ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
 	server.Handler = entry
