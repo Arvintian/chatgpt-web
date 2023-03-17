@@ -29,4 +29,6 @@ arvintian/chatgpt-web
 
 For more detailed parameters, please refer to the [start function](https://github.com/Arvintian/chatgpt-web/blob/main/cmd/main.go#L21).
 
-PS: Use (integer/100) to set the float32 model parameters. For example, if temperature is set to 0.8, it needs to be set to 80.
+Tips: 
+- Use (integer/100) to set the float32 model parameters. For example, if temperature is set to 0.8, it needs to be set to 80.
+- The built-in support for a forward proxy of OPENAI_BASE_URL enables it to function as a proxy server for the OpenAI API.

@@ -33,4 +33,6 @@ arvintian/chatgpt-web
 
 更详细参数参考: [启动函数](https://github.com/Arvintian/chatgpt-web/blob/main/cmd/main.go#L21)
 
-PS: 模型float32参数使用(整型/100)设置,例如: temperature设置0.8,需要设置为80
+Tips: 
+- 模型float32参数使用(整型/100)设置,例如: temperature设置0.8,需要设置为80
+- 内置支持了对OPENAI_BASE_URL的正向代理,可以作为OpenAI接口的代理服务器
