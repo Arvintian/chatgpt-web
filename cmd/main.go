@@ -116,13 +116,15 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	if err != nil {
 		klog.Fatal(err)
 	}
-	proxyUrl, err := url.Parse(r.SocksProxy)
-	if err != nil {
-		klog.Fatal(err)
-	}
 	upstream := httputil.NewSingleHostReverseProxy(upstreamURL)
-	upstream.Transport = &http.Transport{
-		Proxy: http.ProxyURL(proxyUrl),
+	if r.SocksProxy != "" {
+		proxyUrl, err := url.Parse(r.SocksProxy)
+		if err != nil {
+			klog.Fatal(err)
+		}
+		upstream.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyUrl),
+		}
 	}
 	apis := proxy.Group("/v1")
 	apis.Any("/*relativePath", func(ctx *gin.Context) {
