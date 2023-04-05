@@ -1,4 +1,4 @@
-FROM chenzhaoyu94/chatgpt-web:v2.10.7 as frontend
+FROM chenzhaoyu94/chatgpt-web:v2.10.9 as frontend
 
 FROM arvintian/chatgpt-web-base:v1
 

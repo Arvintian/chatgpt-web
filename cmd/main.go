@@ -79,7 +79,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry, proxy := gin.New(), gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
-	chat := entry.Group("/")
+	chat := entry.Group("/api")
 	if len(r.BasicAuthUser) > 0 {
 		accounts := gin.Accounts{}
 		users := strings.Split(r.BasicAuthUser, ",")
