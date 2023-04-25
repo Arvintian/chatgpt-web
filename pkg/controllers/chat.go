@@ -120,6 +120,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 			"message": fmt.Sprintf("%v", err),
 			"data":    nil,
 		})
+		return
 	}
 
 	message.TokenCount = tokenCount
