@@ -32,7 +32,7 @@ type ChatGPTWebServer struct {
 	ChatMinResponseTokens  int    `name:"chat-min-response-tokens" env:"CHAT_MIN_RESPONSE_TOKENS" default:"600" usage:"chat min response tokens"`
 	OpenAIKey              string `name:"openapi-key" env:"OPENAI_KEY" usage:"openai key"`
 	OpenAIBaseURL          string `name:"openapi-base-url" env:"OPENAI_BASE_URL" default:"https://api.openai.com/v1" usage:"openai base url"`
-	OpenAIModel            string `name:"openai-model" env:"OPENAI_MODEL" default:"gpt-3.5-turbo-0301" usage:"openai params model"`
+	OpenAIModel            string `name:"openai-model" env:"OPENAI_MODEL" default:"gpt-3.5-turbo" usage:"openai params model"`
 	OpenAIMaxTokens        int    `name:"openai-max-tokens" env:"OPENAI_MAX_TOKENS" default:"4096" usage:"openai params max-tokens"`
 	OpenAITemperature      int    `name:"openai-temperature" env:"OPENAI_TEMPERATURE" default:"80" usage:"openai params temperature"`
 	OpenAIPresencePenalty  int    `name:"openai-presence-penalty" env:"OPENAI_PRESENCE_PENALTY" default:"100" usage:"openai params presence-penalty"`
