@@ -5,6 +5,8 @@ import tiktoken
 
 encoding_cache = {}
 
+support_models = set(["gpt-3.5-turbo", "gpt-3.5-turbo-0301", "gpt-4", "gpt-4-0314", "gpt-4-32k", "gpt-4-32k-0314"])
+
 
 @route("/tokenizer/<str:model_name>", methods=["POST"])
 @use_args({
@@ -26,7 +28,7 @@ def get_num_tokens(req: Request, message: dict, model_name: str):
         }
 
 
-def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301"):
+def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     """Returns the number of tokens used by a list of messages."""
     encoding = None
     if model in encoding_cache:
@@ -37,7 +39,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo-0301"):
         except KeyError:
             encoding = tiktoken.get_encoding("cl100k_base")
         encoding_cache[model] = encoding
-    if model == "gpt-3.5-turbo-0301":  # note: future models may deviate from this
+    if model in support_models:  # note: future models may deviate from this
         num_tokens = 0
         for message in messages:
             num_tokens += 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
