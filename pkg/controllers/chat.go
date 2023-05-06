@@ -126,7 +126,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	message.TokenCount = tokenCount
 	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
 
-	//klog.Infof("send message %d tokens, set completion %d max tokens", numTokens, chat.params.MaxTokens-numTokens)
+	klog.Infof("use %s model, send message %d tokens, set completion %d max tokens", chat.params.Model, numTokens, chat.params.MaxTokens-numTokens)
 
 	stream, err := chat.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
 		Model:            chat.params.Model,
