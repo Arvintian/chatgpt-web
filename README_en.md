@@ -21,7 +21,7 @@ arvintian/chatgpt-web
 - CHAT_MIN_RESPONSE_TOKENS: Tokens reserved for session response, may lead to truncation of the longest context, default 600.
 - OPENAI_KEY: OpenAI API key, refer to OpenAI documentation.
 - OPENAI_BASE_URL: OpenAI API base URL, default https://api.openai.com/v1.
-- OPENAI_MODEL: Model called, default gpt-3.5-turbo-0301.
+- OPENAI_MODEL: Model called, default gpt-3.5-turbo.
 - OPENAI_MAX_TOKENS: Model max_tokens parameter, refer to OpenAI documentation.
 - OPENAI_TEMPERATURE: Model temperature parameter, refer to OpenAI documentation.
 - OPENAI_PRESENCE_PENALTY: Model presence_penalty parameter, refer to OpenAI documentation.

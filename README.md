@@ -25,7 +25,7 @@ arvintian/chatgpt-web
 - CHAT_MIN_RESPONSE_TOKENS 预留给会话响应的token数,可能导致截断最久的上下文,默认600
 - OPENAI_KEY openai api key,参考OpenAI文档
 - OPENAI_BASE_URL openai api base url,默认https://api.openai.com/v1
-- OPENAI_MODEL 调用模型,默认gpt-3.5-turbo-0301
+- OPENAI_MODEL 调用模型,默认gpt-3.5-turbo
 - OPENAI_MAX_TOKENS 模型max_tokens参数,参考OpenAI文档
 - OPENAI_TEMPERATURE 模型temperature参数,参考OpenAI文档
 - OPENAI_PRESENCE_PENALTY 模型presence_penalty参数,参考OpenAI文档
