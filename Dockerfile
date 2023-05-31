@@ -1,6 +1,6 @@
 FROM chenzhaoyu94/chatgpt-web:v2.10.9 as frontend
 
-FROM arvintian/chatgpt-web-base:v2
+FROM arvintian/chatgpt-web-base:v3
 
 COPY --from=frontend /app/public /app/public
 

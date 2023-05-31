@@ -47,7 +47,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
                 num_tokens += len(encoding.encode(value))
                 if key == "name":  # if there's a name, the role is omitted
                     num_tokens += -1  # role is always required and always 1 token
-        num_tokens += 2  # every reply is primed with <im_start>assistant
+        num_tokens += 3  # every reply is primed with <im_start>assistant
         return num_tokens
     else:
         raise NotImplementedError(f"""num_tokens_from_messages() is not presently implemented for model {model}.
