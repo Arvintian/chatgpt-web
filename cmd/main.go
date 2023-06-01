@@ -22,8 +22,10 @@ import (
 type ChatGPTWebServer struct {
 	Host                   string `name:"host" env:"SERVER_HOST" usage:"http bind host" default:"0.0.0.0"`
 	Port                   int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
+	BasicAuthUser          string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
+	BasicAuthPassword      string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
 	OpsKey                 string `name:"ops-key" env:"OPS_KEY" usage:"ops key"`
-	DataBase               string `name:"db" env:"DB" usage:"database url user:pass@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"`
+	DataBase               string `name:"db" env:"DB" default:"/data/chatgpt.db" usage:"mysql database url or sqlite path, user:pass@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"`
 	FrontendPath           string `name:"frontend-path" env:"FRONTEND_PATH" default:"/app/public" usage:"frontend path"`
 	SocksProxy             string `name:"socks-proxy" env:"SOCKS_PROXY" usage:"socks proxy url"`
 	ChatSessionTTL         int    `name:"chat-session-ttl" env:"CHAT_SESSION_TTL" default:"30" usage:"chat session ttl minute"`
@@ -56,7 +58,7 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
-	accountService, err := controllers.NewAccountService(r.DataBase)
+	accountService, err := controllers.NewAccountService(r.DataBase, r.BasicAuthUser, r.BasicAuthPassword)
 	if err != nil {
 		klog.Fatal(err)
 	}

@@ -6,6 +6,8 @@ COPY --from=frontend /app/public /app/public
 
 ADD dist/server /app/server
 
+RUN mkdir -p /data
+
 EXPOSE 7080
 
 CMD ["/app/server"]

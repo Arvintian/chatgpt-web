@@ -193,11 +193,11 @@ func BasicAuth(ac *controllers.AccountService) gin.HandlerFunc {
 
 func OpsAuth(theKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := c.Request.Header.Get("Apikey")
+		key := c.Request.Header.Get("Opskey")
 		if key != theKey {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":  "Fail",
-				"message": "Header Apikey error",
+				"message": "Header Opskey error",
 				"data":    nil,
 			})
 			c.Abort()

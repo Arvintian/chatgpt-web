@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	mmysql "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"k8s.io/klog/v2"
@@ -29,15 +31,50 @@ func (User) TableName() string {
 	return "users"
 }
 
-func NewAccountService(dsn string) (*AccountService, error) {
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+func NewAccountService(dsn string, basicUsers, baiscPasswords string) (*AccountService, error) {
+	accounts := map[string]string{}
+	users := strings.Split(basicUsers, ",")
+	passwords := strings.Split(baiscPasswords, ",")
+	if len(users) != len(passwords) {
+		return nil, errors.New("basic auth setting error")
+	}
+	for i := 0; i < len(users); i++ {
+		if len(users[i]) > 0 {
+			accounts[users[i]] = passwords[i]
+		}
+	}
+	var db *gorm.DB
+	_, err := mmysql.ParseDSN(dsn)
+	if err != nil {
+		db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	} else {
+		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	}
 	if err != nil {
 		return nil, err
 	}
-	db.AutoMigrate(&User{})
-	return &AccountService{
+	if err := db.AutoMigrate(&User{}); err != nil {
+		return nil, err
+	}
+	as := &AccountService{
 		db: db,
-	}, nil
+	}
+	//init static user
+	for user, passwd := range accounts {
+		item, err := as.GetUser(user, passwd)
+		if err != nil {
+			klog.Infof("create user %s:%s", user, passwd)
+			if err := as.CreateUser(user, passwd, -1); err != nil {
+				return nil, err
+			}
+		} else {
+			item.Balance, item.Isblock = -1, 0
+			if err := db.Save(&item).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
+	return as, nil
 }
 
 type AccountPayload struct {
@@ -173,7 +210,7 @@ func (ac *AccountService) AuthenticateUser(username, password string) int {
 	if user.Isblock > 0 {
 		return 1
 	}
-	if user.Usage >= user.Balance {
+	if user.Balance >= 0 && user.Usage >= user.Balance {
 		return 2
 	}
 	return 0
