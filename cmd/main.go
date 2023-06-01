@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,8 +22,8 @@ import (
 type ChatGPTWebServer struct {
 	Host                   string `name:"host" env:"SERVER_HOST" usage:"http bind host" default:"0.0.0.0"`
 	Port                   int    `name:"port" env:"SERVER_PORT" usage:"http bind port" default:"7080"`
-	BasicAuthUser          string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
-	BasicAuthPassword      string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
+	OpsKey                 string `name:"ops-key" env:"OPS_KEY" usage:"ops key"`
+	DataBase               string `name:"db" env:"DB" usage:"database url user:pass@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"`
 	FrontendPath           string `name:"frontend-path" env:"FRONTEND_PATH" default:"/app/public" usage:"frontend path"`
 	SocksProxy             string `name:"socks-proxy" env:"SOCKS_PROXY" usage:"socks proxy url"`
 	ChatSessionTTL         int    `name:"chat-session-ttl" env:"CHAT_SESSION_TTL" default:"30" usage:"chat session ttl minute"`
@@ -58,6 +56,10 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
+	accountService, err := controllers.NewAccountService(r.DataBase)
+	if err != nil {
+		klog.Fatal(err)
+	}
 	chatService, err := controllers.NewChatService(r.OpenAIKey, r.OpenAIBaseURL, r.SocksProxy, controllers.ChatCompletionParams{
 		Model:                 r.OpenAIModel,
 		MaxTokens:             r.OpenAIMaxTokens,
@@ -66,7 +68,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 		FrequencyPenalty:      float32(r.OpenAIFrequencyPenalty) / 100.0,
 		ChatSessionTTL:        time.Duration(r.ChatSessionTTL) * time.Minute,
 		ChatMinResponseTokens: r.ChatMinResponseTokens,
-	})
+	}, accountService)
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -76,24 +78,12 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	server := &http.Server{
 		Addr: addr,
 	}
-	entry, proxy := gin.New(), gin.New()
+	entry := gin.New()
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
 	chat := entry.Group("/api")
-	if len(r.BasicAuthUser) > 0 {
-		accounts := gin.Accounts{}
-		users := strings.Split(r.BasicAuthUser, ",")
-		passwords := strings.Split(r.BasicAuthPassword, ",")
-		if len(users) != len(passwords) {
-			panic("basic auth setting error")
-		}
-		for i := 0; i < len(users); i++ {
-			accounts[users[i]] = passwords[i]
-		}
-		chat.POST("/chat-process", gin.BasicAuth(accounts), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
-	} else {
-		chat.POST("/chat-process", middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
-	}
+	chat.POST("/chat-process", BasicAuth(accountService), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
+	chat.POST("/process", BasicAuth(accountService), middlewares.RateLimitMiddleware(1, 2), chatService.MessageProcess)
 	chat.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
@@ -112,30 +102,10 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 			},
 		})
 	})
-	upstreamURL, err := url.Parse(strings.TrimSuffix(r.OpenAIBaseURL, "/v1"))
-	if err != nil {
-		klog.Fatal(err)
-	}
-	upstream := httputil.NewSingleHostReverseProxy(upstreamURL)
-	if r.SocksProxy != "" {
-		proxyUrl, err := url.Parse(r.SocksProxy)
-		if err != nil {
-			klog.Fatal(err)
-		}
-		upstream.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyUrl),
-		}
-	}
-	apis := proxy.Group("/v1")
-	apis.Any("/*relativePath", func(ctx *gin.Context) {
-		ctx.Request.Host = upstreamURL.Host
-		upstream.ServeHTTP(ctx.Writer, ctx.Request)
-	})
-	proxy.NoRoute(func(ctx *gin.Context) {
-		http.FileServer(http.Dir(r.FrontendPath)).ServeHTTP(ctx.Writer, ctx.Request)
-	})
+
+	entry.POST("/accounts", OpsAuth(r.OpsKey), accountService.AccountProcess)
 	entry.NoRoute(func(ctx *gin.Context) {
-		proxy.ServeHTTP(ctx.Writer, ctx.Request)
+		http.FileServer(http.Dir(r.FrontendPath)).ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
 	server.Handler = entry
@@ -172,13 +142,16 @@ func (r *ChatGPTWebServer) startTokenizer(ctx context.Context) {
 func (r *ChatGPTWebServer) updateAssetsFiles() error {
 	pairs := map[string]string{}
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
-	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChatGPT",description:'Star on <a href="https://github.com/Arvintian/chatgpt-web" class="text-blue-500" target="_blank" >Github</a>'}`
+	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"获取帮助输入/help",description:'Star on <a href="https://github.com/Arvintian/chatgpt-web" class="text-blue-500" target="_blank" >Github</a>'}`
 	pairs[old] = new
 	old = `{}.VITE_GLOB_OPEN_LONG_REPLY`
 	new = `{VITE_GLOB_OPEN_LONG_REPLY:"true"}.VITE_GLOB_OPEN_LONG_REPLY`
 	pairs[old] = new
 	old = `<link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script>`
 	new = ``
+	pairs[old] = new
+	old = `[y(" 此项目开源于 "),e("a",{class:"text-blue-600 dark:text-blue-500",href:"https://github.com/Chanzhaoyu/chatgpt-web",target:"_blank"}," Github "),y(" ，免费且基于 MIT 协议，没有任何形式的付费行为！ ")]`
+	new = `[y(" 此项目开源于 "),e("a",{class:"text-blue-600 dark:text-blue-500",href:"https://github.com/Arvintian/chatgpt-web",target:"_blank"}," Github ")]`
 	pairs[old] = new
 	return utils.ReplaceFiles(r.FrontendPath, pairs)
 }

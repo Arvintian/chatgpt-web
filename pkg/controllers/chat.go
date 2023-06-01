@@ -23,9 +23,10 @@ const (
 )
 
 type ChatService struct {
-	client *openai.Client
-	store  *ccache.Cache[ChatMessage]
-	params ChatCompletionParams
+	client  *openai.Client
+	store   *ccache.Cache[ChatMessage]
+	params  ChatCompletionParams
+	account *AccountService
 }
 
 type ChatCompletionParams struct {
@@ -59,7 +60,7 @@ type ChatMessage struct {
 	ParentMessageId string                              `json:"parentMessageId"`
 }
 
-func NewChatService(apiKey string, baseURL string, socksProxy string, params ChatCompletionParams) (*ChatService, error) {
+func NewChatService(apiKey string, baseURL string, socksProxy string, params ChatCompletionParams, account *AccountService) (*ChatService, error) {
 	config := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		config.BaseURL = baseURL
@@ -78,9 +79,10 @@ func NewChatService(apiKey string, baseURL string, socksProxy string, params Cha
 		klog.Infof("use sock proxy: %s", proxyUrl)
 	}
 	chat := ChatService{
-		client: openai.NewClientWithConfig(config),
-		params: params,
-		store:  ccache.New(ccache.Configure[ChatMessage]()),
+		client:  openai.NewClientWithConfig(config),
+		params:  params,
+		store:   ccache.New(ccache.Configure[ChatMessage]()),
+		account: account,
 	}
 	return &chat, nil
 }
@@ -96,6 +98,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		})
 		return
 	}
+	username := ctx.GetString("username")
 
 	messageID := uuid.New().String()
 
@@ -161,10 +164,8 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	}
 
 	firstChunk := true
-	ctx.Header("Content-type", "application/octet-stream")
-	for {
-		rsp, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
+	defer func() {
+		if result.Text != "" {
 			go func() {
 				tokenCount, err := tokenizer.GetTokenCount(openai.ChatCompletionMessage{
 					Role:    result.Role,
@@ -176,7 +177,14 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 				}
 				result.TokenCount = tokenCount
 				chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
+				chat.account.IncUsage(username, int64(tokenCount+numTokens-ChatPrimedTokens))
 			}()
+		}
+	}()
+	ctx.Header("Content-type", "application/octet-stream")
+	for {
+		rsp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
 			return
 		}
 
@@ -227,6 +235,127 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 
 		ctx.Writer.Flush()
 	}
+}
+
+func (chat *ChatService) MessageProcess(ctx *gin.Context) {
+	payload := ChatMessageRequest{}
+	if err := ctx.BindJSON(&payload); err != nil {
+		klog.Error(err)
+		ctx.JSON(200, gin.H{
+			"status":  "Fail",
+			"message": fmt.Sprintf("%v", err),
+			"data":    nil,
+		})
+		return
+	}
+	username := ctx.GetString("username")
+
+	messageID := uuid.New().String()
+
+	message := ChatMessage{
+		ID:              messageID,
+		Role:            openai.ChatMessageRoleUser,
+		Text:            payload.Prompt,
+		ParentMessageId: payload.Options.ParentMessageId,
+	}
+
+	result := ChatMessage{
+		ID:              uuid.New().String(),
+		Role:            openai.ChatMessageRoleAssistant,
+		Text:            "",
+		ParentMessageId: messageID,
+	}
+
+	messages, numTokens, tokenCount, err := chat.buildMessage(payload)
+	if err != nil {
+		ctx.JSON(200, gin.H{
+			"status":  "Fail",
+			"message": fmt.Sprintf("%v", err),
+			"data":    nil,
+		})
+		return
+	}
+
+	message.TokenCount = tokenCount
+	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
+
+	klog.Infof("use %s model, send message %d tokens, set completion %d max tokens", chat.params.Model, numTokens, chat.params.MaxTokens-numTokens)
+
+	resp, err := chat.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model:            chat.params.Model,
+		Messages:         messages,
+		MaxTokens:        chat.params.MaxTokens - numTokens,
+		Temperature:      chat.params.Temperature,
+		PresencePenalty:  chat.params.PresencePenalty,
+		FrequencyPenalty: chat.params.FrequencyPenalty,
+		TopP:             1,
+		Stream:           false,
+	})
+	if err != nil {
+		klog.Error(err)
+		ctx.JSON(200, gin.H{
+			"status":  "Fail",
+			"message": fmt.Sprintf("%v", err),
+			"data":    nil,
+		})
+		return
+	}
+
+	if len(resp.Choices) > 0 {
+		content := resp.Choices[0].Message.Content
+		result.Delta = content
+		result.Text += content
+		result.Detail = openai.ChatCompletionStreamResponse{
+			ID:      resp.ID,
+			Object:  resp.Object,
+			Created: resp.Created,
+			Model:   resp.Model,
+			Choices: []openai.ChatCompletionStreamChoice{
+				// {
+				// 	Index:        resp.Choices[0].Index,
+				// 	FinishReason: resp.Choices[0].FinishReason,
+				// 	Delta: openai.ChatCompletionStreamChoiceDelta{
+				// 		Content: content,
+				// 	},
+				// },
+			},
+		}
+	}
+
+	if resp.ID != "" {
+		result.ID = resp.ID
+	}
+	//issue why usage.completion_tokens less 8 than tiktoken?
+	result.TokenCount = resp.Usage.TotalTokens + 8
+
+	defer func() {
+		if result.Text != "" {
+			go func() {
+				tokenCount, err := tokenizer.GetTokenCount(openai.ChatCompletionMessage{
+					Role:    result.Role,
+					Content: result.Text,
+					Name:    result.Name,
+				}, chat.params.Model)
+				if err != nil {
+					klog.Error(err)
+				}
+				result.TokenCount = tokenCount
+				chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
+				chat.account.IncUsage(username, int64(tokenCount+numTokens-ChatPrimedTokens))
+			}()
+		}
+	}()
+
+	if _, err := json.Marshal(result); err != nil {
+		klog.Error(err)
+		ctx.JSON(200, gin.H{
+			"status":  "Fail",
+			"message": fmt.Sprintf("OpenAI Event Marshal Error %v", err),
+			"data":    nil,
+		})
+		return
+	}
+	ctx.JSON(200, result)
 }
 
 func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, int, error) {
