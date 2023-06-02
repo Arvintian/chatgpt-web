@@ -10,15 +10,19 @@
 
 [✓] 用户认证、管理
 
+[✓] Token使用量计费、充值
+
 [✓] 对话交互帮助
 
-[✓] Token使用量计费、充值
+[✓] 管理员后台
 
 [✓] OPENAI接口代理服务器
 
 ## 效果
 
 ![cover](./docs/chat-shot.png)
+
+![cover](./docs/admin.png)
 
 ## 快速部署
 
@@ -59,7 +63,7 @@ arvintian/chatgpt-web
 ### 系统管理
 
 - OPS_KEY 管理接口认证key
-- OPS_LINK 当用户认证失败、token余额不足提示自助链接
+- OPS_LINK 当用户认证失败、token余额不足提示自助链接，默认跳转/admin管理后台
 
 系统管理配置项，方便集成其他系统
 
@@ -75,6 +79,10 @@ arvintian/chatgpt-web
 
 在OPENAI_BASE_URL的基础上再开正向代理，方便用作OpenAI接口的代理服务器
 
+
+## 管理后台
+
+系统管理后台路径为/admin，用户名为admin，密码为OPS_KEY值
 
 ## API
 

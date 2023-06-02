@@ -4,6 +4,10 @@ FROM arvintian/chatgpt-web-base:v3
 
 COPY --from=frontend /app/public /app/public
 
+COPY web/admin /app/public/admin
+
+COPY web/static /app/public/static
+
 ADD dist/server /app/server
 
 RUN mkdir -p /data

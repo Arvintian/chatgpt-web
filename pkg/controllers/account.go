@@ -119,9 +119,32 @@ func (ac *AccountService) AccountProcess(ctx *gin.Context) {
 			return
 		}
 	}
+	if payload.Action == "list" {
+		users, err := ac.ListUser()
+		if err != nil {
+			ctx.JSON(http.StatusOK, gin.H{
+				"status":  "Fail",
+				"message": fmt.Sprintf("%v", err),
+				"data":    nil,
+			})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{
+			"status":  "Success",
+			"message": "success",
+			"data":    users,
+		})
+		return
+	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "success",
 	})
+}
+
+func (ac *AccountService) ListUser() ([]User, error) {
+	var users []User
+	result := ac.db.Find(&users)
+	return users, result.Error
 }
 
 func (ac *AccountService) CreateUser(name, password string, cnt int64) error {
