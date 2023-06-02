@@ -111,7 +111,11 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	})
 	entry.POST("/accounts", OpsAuth(r.OpsKey), accountService.AccountProcess)
 	entry.Any("/admin/*relativePath", gin.BasicAuth(gin.Accounts{"admin": r.OpsKey}), func(ctx *gin.Context) {
-		http.FileServer(http.Dir(path.Join(r.FrontendPath))).ServeHTTP(ctx.Writer, ctx.Request)
+		if ctx.Request.URL.Path == "/admin/accounts" {
+			accountService.AccountProcess(ctx)
+		} else {
+			http.FileServer(http.Dir(path.Join(r.FrontendPath))).ServeHTTP(ctx.Writer, ctx.Request)
+		}
 	})
 	if r.OpenAIProxy {
 		klog.Info("enable proxy openai api server")

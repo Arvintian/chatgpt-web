@@ -177,11 +177,6 @@ func BasicAuth(ac *controllers.AccountService, link string) gin.HandlerFunc {
 
 func OpsAuth(theKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		username, password, ok := c.Request.BasicAuth()
-		if ok && username == "admin" && password == theKey {
-			c.Next()
-			return
-		}
 		key := c.Request.Header.Get("Opskey")
 		if key != theKey {
 			c.JSON(http.StatusInternalServerError, gin.H{
