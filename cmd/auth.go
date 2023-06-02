@@ -16,13 +16,14 @@ import (
 
 var help = `#### 帮助命令
 - /help 获取帮助信息
-- /me 获取用户信息
-- /usage 获取Token余额
+- /me 获取用户信息、Token余额
 - /user 新账户:新密码 更改账户、密码
 - /login 登录、重新登录
+
+[自助中心](%s)
 `
 
-func BasicAuth(ac *controllers.AccountService) gin.HandlerFunc {
+func BasicAuth(ac *controllers.AccountService, link string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -41,7 +42,7 @@ func BasicAuth(ac *controllers.AccountService) gin.HandlerFunc {
 			case "/help":
 				c.JSON(http.StatusOK, gin.H{
 					"status":  "Fail",
-					"message": help,
+					"message": fmt.Sprintf(help, link),
 					"data":    nil,
 				})
 				c.Abort()
@@ -54,23 +55,6 @@ func BasicAuth(ac *controllers.AccountService) gin.HandlerFunc {
 						message = "用户信息错误"
 					} else {
 						message = fmt.Sprintf("账户: %s\nToken余额: %d", user.Username, user.Balance-user.Usage)
-					}
-				}
-				c.JSON(http.StatusOK, gin.H{
-					"status":  "Fail",
-					"message": message,
-					"data":    nil,
-				})
-				c.Abort()
-				return
-			case "/usage":
-				username, password, ok := c.Request.BasicAuth()
-				message := "未登录"
-				if ok {
-					if user, err := ac.GetUser(username, password); err != nil {
-						message = "用户信息错误"
-					} else {
-						message = fmt.Sprintf("Token余额: %d", user.Balance-user.Usage)
 					}
 				}
 				c.JSON(http.StatusOK, gin.H{
@@ -178,7 +162,7 @@ func BasicAuth(ac *controllers.AccountService) gin.HandlerFunc {
 			if authCode == 2 {
 				c.JSON(http.StatusOK, gin.H{
 					"status":  "Fail",
-					"message": fmt.Sprintf("Token数已用尽, 您的账号: %s", username),
+					"message": fmt.Sprintf("Token数已用尽,请到[自助中心](%s)补充,您的账号: %s", link, username),
 					"data":    nil,
 				})
 			}

@@ -25,6 +25,7 @@ type ChatGPTWebServer struct {
 	BasicAuthUser          string `name:"auth-user" env:"BASIC_AUTH_USER" usage:"http basic auth user"`
 	BasicAuthPassword      string `name:"auth-password" env:"BASIC_AUTH_PASSWORD" usage:"http basic auth password"`
 	OpsKey                 string `name:"ops-key" env:"OPS_KEY" usage:"ops key"`
+	OpsLink                string `name:"ops-link" env:"OPS_LINK" default:"https://faka.v95.xyz" usage:"ops link"`
 	DataBase               string `name:"db" env:"DB" default:"/data/chatgpt.db" usage:"mysql database url or sqlite path, user:pass@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"`
 	FrontendPath           string `name:"frontend-path" env:"FRONTEND_PATH" default:"/app/public" usage:"frontend path"`
 	SocksProxy             string `name:"socks-proxy" env:"SOCKS_PROXY" usage:"socks proxy url"`
@@ -47,7 +48,7 @@ func (r *ChatGPTWebServer) Run(cmd *cobra.Command, args []string) error {
 		return r.ShowVersion()
 	}
 	gin.SetMode(gin.ReleaseMode)
-	if err := r.updateAssetsFiles(); err != nil {
+	if err := r.updateAssetsFiles(r.OpsLink); err != nil {
 		return err
 	}
 	go r.startTokenizer(cmd.Context())
@@ -84,8 +85,8 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry.Use(gin.Logger())
 	entry.Use(gin.Recovery())
 	chat := entry.Group("/api")
-	chat.POST("/chat-process", BasicAuth(accountService), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
-	chat.POST("/process", BasicAuth(accountService), middlewares.RateLimitMiddleware(1, 2), chatService.MessageProcess)
+	chat.POST("/chat-process", BasicAuth(accountService, r.OpsLink), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
+	chat.POST("/process", BasicAuth(accountService, r.OpsLink), middlewares.RateLimitMiddleware(1, 2), chatService.MessageProcess)
 	chat.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
@@ -125,11 +126,6 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 }
 
 func (r *ChatGPTWebServer) startTokenizer(ctx context.Context) {
-	// devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
-	// if err != nil {
-	// 	klog.Error(err)
-	// 	os.Exit(1)
-	// }
 	args := strings.Split("nuxt --module tokenizer.py --workers 2", " ")
 	klog.Infof("Start Tokenizer with %v", args)
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
@@ -141,10 +137,10 @@ func (r *ChatGPTWebServer) startTokenizer(ctx context.Context) {
 	}
 }
 
-func (r *ChatGPTWebServer) updateAssetsFiles() error {
+func (r *ChatGPTWebServer) updateAssetsFiles(link string) error {
 	pairs := map[string]string{}
 	old := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"ChenZhaoYu",description:'Star on <a href="https://github.com/Chanzhaoyu/chatgpt-bot" class="text-blue-500" target="_blank" >Github</a>'}`
-	new := `{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"获取帮助输入/help",description:'Star on <a href="https://github.com/Arvintian/chatgpt-web" class="text-blue-500" target="_blank" >Github</a>'}`
+	new := fmt.Sprintf(`{avatar:"https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",name:"获取帮助输入/help",description:'<a href="%s" class="text-blue-500" target="_blank" >自助中心</a>'}`, link)
 	pairs[old] = new
 	old = `{}.VITE_GLOB_OPEN_LONG_REPLY`
 	new = `{VITE_GLOB_OPEN_LONG_REPLY:"true"}.VITE_GLOB_OPEN_LONG_REPLY`
