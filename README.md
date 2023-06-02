@@ -1,6 +1,5 @@
 # ChatGPT-Web
 
-
 [国内在线服务](https://faka.v95.xyz)
 
 [English](https://github.com/Arvintian/chatgpt-web/blob/main/README_en.md)
@@ -16,6 +15,10 @@
 [✓] Token使用量计费、充值
 
 [✓] OPENAI接口代理服务器
+
+## 效果
+
+![cover](./docs/chat-shot.png)
 
 ## 快速部署
 
