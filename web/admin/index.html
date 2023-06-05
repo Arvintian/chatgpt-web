@@ -82,6 +82,15 @@
                                 "label": "已使用Token数",
                             },
                             {
+                                "type": "mapping",
+                                "name": "Isblock",
+                                "label": "状态",
+                                "map": {
+                                    0: "<span class='text-success'>正常</span>",
+                                    1: "<span class='text-danger'>禁用</span>"
+                                }
+                            },
+                            {
                                 "type": "operation",
                                 "label": "操作",
                                 "buttons": [
@@ -100,7 +109,7 @@
                                                     "data": {
                                                         "action": "recharge",
                                                         "i_username": "${Username}",
-                                                        "count": "${count}"
+                                                        "count": "${i_count}"
                                                     },
                                                     "adaptor": function (payload, response, api) {
                                                         return {
@@ -117,9 +126,59 @@
                                                         "type": "input-text",
                                                     },
                                                     {
-                                                        "name": "count",
+                                                        "name": "i_count",
                                                         "label": "数量",
                                                         "type": "input-number",
+                                                    }
+                                                ],
+                                            }
+                                        },
+                                    },
+                                    {
+                                        "label": "修改状态",
+                                        "type": "button",
+                                        "actionType": "dialog",
+                                        "level": "link",
+                                        "dialog": {
+                                            "title": "",
+                                            "body": {
+                                                "type": "form",
+                                                "api": {
+                                                    "method": "post",
+                                                    "url": "/admin/accounts",
+                                                    "data": {
+                                                        "action": "grant",
+                                                        "i_username": "${Username}",
+                                                        "count": "${Isblock}"
+                                                    },
+                                                    "adaptor": function (payload, response, api) {
+                                                        return {
+                                                            "status": payload.message === "success" ? 0 : -1,
+                                                            "msg": payload.message,
+                                                            "data": {}
+                                                        }
+                                                    }
+                                                },
+                                                "body": [
+                                                    {
+                                                        "name": "Username",
+                                                        "label": "用户名",
+                                                        "type": "input-text",
+                                                    },
+                                                    {
+                                                        "name": "Isblock",
+                                                        "label": "状态",
+                                                        "type": "select",
+                                                        "options": [
+                                                            {
+                                                                "label": "正常",
+                                                                "value": 0
+                                                            },
+                                                            {
+                                                                "label": "禁用",
+                                                                "value": 1
+                                                            },
+                                                        ]
                                                     }
                                                 ],
                                             }
@@ -149,7 +208,7 @@
                                                 "action": "register",
                                                 "i_username": "${i_username}",
                                                 "i_password": "${i_password}",
-                                                "count": "${count}"
+                                                "count": "${i_count}"
                                             },
                                             "adaptor": function (payload, response, api) {
                                                 return {
@@ -172,7 +231,7 @@
                                             },
                                             {
                                                 "type": "input-number",
-                                                "name": "count",
+                                                "name": "i_count",
                                                 "label": "初始Token数",
                                             },
                                         ],

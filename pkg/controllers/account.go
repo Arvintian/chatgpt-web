@@ -119,6 +119,14 @@ func (ac *AccountService) AccountProcess(ctx *gin.Context) {
 			return
 		}
 	}
+	if payload.Action == "grant" {
+		if err := ac.GrantUser(payload.Username, payload.Count); err != nil {
+			ctx.JSON(http.StatusOK, gin.H{
+				"message": fmt.Sprintf("%v", err),
+			})
+			return
+		}
+	}
 	if payload.Action == "list" {
 		users, err := ac.ListUser()
 		if err != nil {
@@ -200,6 +208,21 @@ func (ac *AccountService) CheckUser(username string) (User, error) {
 		return user, result.Error
 	}
 	return user, nil
+}
+
+func (ac *AccountService) GrantUser(username string, block int64) error {
+	var user User
+	result := ac.db.Where(&User{Username: username}).First(&user)
+	if result.Error != nil {
+		return result.Error
+	}
+	if block > 0 {
+		user.Isblock = 1
+	} else {
+		user.Isblock = 0
+	}
+	result = ac.db.Save(&user)
+	return result.Error
 }
 
 func (ac *AccountService) IncBalance(username string, cnt int64) error {
