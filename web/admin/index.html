@@ -36,6 +36,8 @@
                     {
                         "type": "crud",
                         "syncLocation": false,
+                        "loadDataOnce": true,
+                        "perPage": 15,
                         "api": {
                             "method": "post",
                             "url": "/admin/accounts",
@@ -62,6 +64,7 @@
                                 "name": "Username",
                                 "label": "用户名",
                                 "type": "text",
+                                "searchable": true,
                             },
                             {
                                 "type": "text",
@@ -178,6 +181,9 @@
                             },
                             "export-csv",
                             "reload"
+                        ],
+                        "footerToolbar": [
+                            "pagination"
                         ],
                     }
                 ]
