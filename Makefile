@@ -1,6 +1,6 @@
 REGISTRY = arvintian
 PROJECT = chatgpt-web
-BASE_VERSION = v3
+BASE_VERSION = v4
 GIT_VERSION = $(shell git rev-parse --short HEAD)
 
 .PHONY: build-local
@@ -23,7 +23,7 @@ release: package
 base:
 	docker build -t $(REGISTRY)/$(PROJECT)-base:$(BASE_VERSION) -f Dockerfile.base .
 
-release-base:
+release-base: base
 	docker push $(REGISTRY)/$(PROJECT)-base:$(BASE_VERSION)
 
 clean:
