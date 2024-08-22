@@ -1,6 +1,6 @@
 REGISTRY = arvintian
 PROJECT = chatgpt-web
-BASE_VERSION = v4
+BASE_VERSION = v5
 GIT_VERSION = $(shell git rev-parse --short HEAD)
 
 .PHONY: build-local
