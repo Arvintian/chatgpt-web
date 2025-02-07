@@ -9,6 +9,7 @@ COPY web/admin /app/public/admin
 COPY web/static /app/public/static
 
 ADD dist/server /app/server
+ADD tokenizer.py /app/tokenizer.py
 
 RUN mkdir -p /data
 

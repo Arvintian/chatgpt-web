@@ -17,6 +17,7 @@ import (
 var help = `#### 帮助命令
 - /help 获取帮助信息
 - /me 获取用户信息、Token余额
+- /model 设置使用模型: model_name,temperature,presence,frequency,max_tokens
 - /user 新账户:新密码 更改账户、密码
 - /login 登录、重新登录
 
@@ -55,6 +56,9 @@ func BasicAuth(ac *controllers.AccountService, link string) gin.HandlerFunc {
 						message = "用户信息错误"
 					} else {
 						message = fmt.Sprintf("账户: %s\nToken余额: %d", user.Username, user.Balance-user.Usage)
+						if user.Model != "" {
+							message += fmt.Sprintf("\n模型配置: %s", user.Model)
+						}
 					}
 				}
 				c.JSON(http.StatusOK, gin.H{
@@ -133,6 +137,46 @@ func BasicAuth(ac *controllers.AccountService, link string) gin.HandlerFunc {
 					c.JSON(http.StatusOK, gin.H{
 						"status":  "Fail",
 						"message": "更新成功,请输入/login重新登录",
+						"data":    nil,
+					})
+				}
+				c.Abort()
+				return
+			}
+			if strings.HasPrefix(payload.Prompt, "/model") {
+				username, password, ok := c.Request.BasicAuth()
+				if !ok {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  "Fail",
+						"message": "未登录",
+						"data":    nil,
+					})
+					c.Abort()
+					return
+				}
+				if _, err := ac.GetUser(username, password); err != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  "Fail",
+						"message": "当前用户信息错误,请输入/login登录其他账户",
+						"data":    nil,
+					})
+					c.Abort()
+					return
+				}
+				model := strings.Trim(strings.TrimPrefix(payload.Prompt, "/model"), " ")
+				if model == "-" {
+					model = ""
+				}
+				if err := ac.UpdateModel(username, model); err != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  "Fail",
+						"message": fmt.Sprintf("更新失败:%v", err),
+						"data":    nil,
+					})
+				} else {
+					c.JSON(http.StatusOK, gin.H{
+						"status":  "Fail",
+						"message": "更新成功",
 						"data":    nil,
 					})
 				}

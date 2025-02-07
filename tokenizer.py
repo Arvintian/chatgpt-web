@@ -36,6 +36,8 @@ def get_num_tokens(req: Request, message: dict, model_name: str):
 def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     """Returns the number of tokens used by a list of messages."""
     encoding = None
+    if not model in support_models:  # note: let other model run
+        model = "gpt-4o"
     if model in encoding_cache:
         encoding = encoding_cache.get(model)
     else:
@@ -44,11 +46,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
         except KeyError:
             encoding = tiktoken.get_encoding("cl100k_base")
         encoding_cache[model] = encoding
-    if model in support_models:  # note: future models may deviate from this
-        return _inner_num_tokens_from_messages(messages, encoding, model)
-    else:
-        raise NotImplementedError(f"""num_tokens_from_messages() is not presently implemented for model {model}.
-See https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken for information on how messages are converted to tokens.""")
+    return _inner_num_tokens_from_messages(messages, encoding, model)
 
 
 def _inner_num_tokens_from_messages(messages, encoding, model):

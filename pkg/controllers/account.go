@@ -24,6 +24,7 @@ type User struct {
 	Password string `gorm:"column:password;not null;index"`
 	Balance  int64  `gorm:"column:balance;not null;default:0"`
 	Usage    int64  `gorm:"column:usage;not null;default:0"`
+	Model    string `gorm:"column:model;not null;default:''"` // model_name,temperature,presence,frequency,max_tokens
 	Isblock  int    `gorm:"column:is_block;not null;default:0"`
 }
 
@@ -243,6 +244,17 @@ func (ac *AccountService) IncUsage(username string, cnt int64) error {
 		return result.Error
 	}
 	user.Usage = user.Usage + int64(cnt)
+	result = ac.db.Save(&user)
+	return result.Error
+}
+
+func (ac *AccountService) UpdateModel(username, model string) error {
+	var user User
+	result := ac.db.Where(&User{Username: username}).First(&user)
+	if result.Error != nil {
+		return result.Error
+	}
+	user.Model = model
 	result = ac.db.Save(&user)
 	return result.Error
 }

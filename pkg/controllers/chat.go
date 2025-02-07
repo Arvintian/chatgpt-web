@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Arvintian/chatgpt-web/pkg/tokenizer"
@@ -99,6 +101,15 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		return
 	}
 	username := ctx.GetString("username")
+	user, err := chat.account.CheckUser(username)
+	if err != nil {
+		ctx.JSON(200, gin.H{
+			"status":  "Fail",
+			"message": fmt.Sprintf("%v", err),
+			"data":    nil,
+		})
+		return
+	}
 
 	messageID := uuid.New().String()
 
@@ -116,7 +127,24 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: messageID,
 	}
 
-	messages, numTokens, tokenCount, err := chat.buildMessage(payload)
+	m, t, p, f, c := parseModelParams(user.Model)
+	if m == "" {
+		m = chat.params.Model
+	}
+	if t <= -1000.0 {
+		t = chat.params.Temperature
+	}
+	if p <= -1000.0 {
+		p = chat.params.PresencePenalty
+	}
+	if f <= -1000.0 {
+		f = chat.params.FrequencyPenalty
+	}
+	if c <= 0 {
+		c = chat.params.MaxTokens
+	}
+
+	messages, numTokens, tokenCount, err := chat.buildMessage(payload, m, c)
 	if err != nil {
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
@@ -129,15 +157,15 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	message.TokenCount = tokenCount
 	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
 
-	klog.Infof("use %s model, send message %d tokens, set completion %d max tokens", chat.params.Model, numTokens, chat.params.MaxTokens-numTokens)
+	klog.Infof("use %s,%v,%v,%v model, send message %d tokens, set completion %d max tokens", m, t, p, f, numTokens, c-numTokens)
 
 	stream, err := chat.client.CreateChatCompletionStream(ctx, openai.ChatCompletionRequest{
-		Model:            chat.params.Model,
+		Model:            m,
 		Messages:         messages,
-		MaxTokens:        chat.params.MaxTokens - numTokens,
-		Temperature:      chat.params.Temperature,
-		PresencePenalty:  chat.params.PresencePenalty,
-		FrequencyPenalty: chat.params.FrequencyPenalty,
+		MaxTokens:        c - numTokens,
+		Temperature:      t,
+		PresencePenalty:  p,
+		FrequencyPenalty: f,
 		TopP:             1,
 		Stream:           true,
 	})
@@ -171,7 +199,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 					Role:    result.Role,
 					Content: result.Text,
 					Name:    result.Name,
-				}, chat.params.Model)
+				}, m)
 				if err != nil {
 					klog.Error(err)
 				}
@@ -237,128 +265,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	}
 }
 
-func (chat *ChatService) MessageProcess(ctx *gin.Context) {
-	payload := ChatMessageRequest{}
-	if err := ctx.BindJSON(&payload); err != nil {
-		klog.Error(err)
-		ctx.JSON(200, gin.H{
-			"status":  "Fail",
-			"message": fmt.Sprintf("%v", err),
-			"data":    nil,
-		})
-		return
-	}
-	username := ctx.GetString("username")
-
-	messageID := uuid.New().String()
-
-	message := ChatMessage{
-		ID:              messageID,
-		Role:            openai.ChatMessageRoleUser,
-		Text:            payload.Prompt,
-		ParentMessageId: payload.Options.ParentMessageId,
-	}
-
-	result := ChatMessage{
-		ID:              uuid.New().String(),
-		Role:            openai.ChatMessageRoleAssistant,
-		Text:            "",
-		ParentMessageId: messageID,
-	}
-
-	messages, numTokens, tokenCount, err := chat.buildMessage(payload)
-	if err != nil {
-		ctx.JSON(200, gin.H{
-			"status":  "Fail",
-			"message": fmt.Sprintf("%v", err),
-			"data":    nil,
-		})
-		return
-	}
-
-	message.TokenCount = tokenCount
-	chat.store.Set(messageID, message, chat.params.ChatSessionTTL)
-
-	klog.Infof("use %s model, send message %d tokens, set completion %d max tokens", chat.params.Model, numTokens, chat.params.MaxTokens-numTokens)
-
-	resp, err := chat.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:            chat.params.Model,
-		Messages:         messages,
-		MaxTokens:        chat.params.MaxTokens - numTokens,
-		Temperature:      chat.params.Temperature,
-		PresencePenalty:  chat.params.PresencePenalty,
-		FrequencyPenalty: chat.params.FrequencyPenalty,
-		TopP:             1,
-		Stream:           false,
-	})
-	if err != nil {
-		klog.Error(err)
-		ctx.JSON(200, gin.H{
-			"status":  "Fail",
-			"message": fmt.Sprintf("%v", err),
-			"data":    nil,
-		})
-		return
-	}
-
-	if len(resp.Choices) > 0 {
-		content := resp.Choices[0].Message.Content
-		result.Delta = content
-		result.Text += content
-		result.Detail = openai.ChatCompletionStreamResponse{
-			ID:      resp.ID,
-			Object:  resp.Object,
-			Created: resp.Created,
-			Model:   resp.Model,
-			Choices: []openai.ChatCompletionStreamChoice{
-				// {
-				// 	Index:        resp.Choices[0].Index,
-				// 	FinishReason: resp.Choices[0].FinishReason,
-				// 	Delta: openai.ChatCompletionStreamChoiceDelta{
-				// 		Content: content,
-				// 	},
-				// },
-			},
-		}
-	}
-
-	if resp.ID != "" {
-		result.ID = resp.ID
-	}
-	//issue why usage.completion_tokens less 8 than tiktoken?
-	result.TokenCount = resp.Usage.TotalTokens + 8
-
-	defer func() {
-		if result.Text != "" {
-			go func() {
-				tokenCount, err := tokenizer.GetTokenCount(openai.ChatCompletionMessage{
-					Role:    result.Role,
-					Content: result.Text,
-					Name:    result.Name,
-				}, chat.params.Model)
-				if err != nil {
-					klog.Error(err)
-				}
-				result.TokenCount = tokenCount
-				chat.store.Set(result.ID, result, chat.params.ChatSessionTTL)
-				chat.account.IncUsage(username, int64(tokenCount+numTokens-ChatPrimedTokens))
-			}()
-		}
-	}()
-
-	if _, err := json.Marshal(result); err != nil {
-		klog.Error(err)
-		ctx.JSON(200, gin.H{
-			"status":  "Fail",
-			"message": fmt.Sprintf("OpenAI Event Marshal Error %v", err),
-			"data":    nil,
-		})
-		return
-	}
-	ctx.JSON(200, result)
-}
-
-func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.ChatCompletionMessage, int, int, error) {
+func (chat *ChatService) buildMessage(payload ChatMessageRequest, model string, maxTokens int) ([]openai.ChatCompletionMessage, int, int, error) {
 	parentMessageId := payload.Options.ParentMessageId
 	messages := []openai.ChatCompletionMessage{}
 	tokenCount := 0
@@ -370,12 +277,12 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 			Name:    payload.Options.Name,
 		}
 		messages = append(messages, chatMessage)
-		tokenCount, err = tokenizer.GetTokenCount(chatMessage, chat.params.Model)
+		tokenCount, err = tokenizer.GetTokenCount(chatMessage, model)
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		if tokenCount >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
-			return nil, 0, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", chat.params.MaxTokens, tokenCount)
+		if tokenCount >= (maxTokens - chat.params.ChatMinResponseTokens) {
+			return nil, 0, 0, fmt.Errorf("this model's maximum context length is %d tokens. you requested %d tokens in the messages", maxTokens, tokenCount)
 		}
 	}
 	numTokens := tokenCount + ChatPrimedTokens
@@ -392,7 +299,7 @@ func (chat *ChatService) buildMessage(payload ChatMessageRequest) ([]openai.Chat
 			Content: parentMessage.Text,
 			Name:    parentMessage.Name,
 		}
-		if (numTokens + parentMessage.TokenCount) >= (chat.params.MaxTokens - chat.params.ChatMinResponseTokens) {
+		if (numTokens + parentMessage.TokenCount) >= (maxTokens - chat.params.ChatMinResponseTokens) {
 			break
 		}
 		numTokens += parentMessage.TokenCount
@@ -412,4 +319,61 @@ func (chat *ChatService) getMessageByID(id string) (ChatMessage, bool) {
 		return ChatMessage{}, false
 	}
 	return item.Value(), true
+}
+
+func parseModelParams(model string) (string, float32, float32, float32, int) {
+	s := strings.Split(model, ",")
+	if len(s) == 2 {
+		t, err := strconv.ParseInt(s[1], 10, 0)
+		if err != nil {
+			t = -100000
+		}
+		return s[0], float32(t) / 100.0, -1000.0, -1000.0, 0
+	}
+	if len(s) == 3 {
+		t, err := strconv.ParseInt(s[1], 10, 0)
+		if err != nil {
+			t = -100000
+		}
+		p, err := strconv.ParseInt(s[2], 10, 0)
+		if err != nil {
+			p = -100000
+		}
+		return s[0], float32(t) / 100.0, float32(p) / 100.0, -1000.0, 0
+	}
+	if len(s) == 4 {
+		t, err := strconv.ParseInt(s[1], 10, 0)
+		if err != nil {
+			t = -100000
+		}
+		p, err := strconv.ParseInt(s[2], 10, 0)
+		if err != nil {
+			p = -100000
+		}
+		f, err := strconv.ParseInt(s[3], 10, 0)
+		if err != nil {
+			f = -100000
+		}
+		return s[0], float32(t) / 100.0, float32(p) / 100.0, float32(f) / 100.0, 0
+	}
+	if len(s) == 5 {
+		t, err := strconv.ParseInt(s[1], 10, 0)
+		if err != nil {
+			t = -100000
+		}
+		p, err := strconv.ParseInt(s[2], 10, 0)
+		if err != nil {
+			p = -100000
+		}
+		f, err := strconv.ParseInt(s[3], 10, 0)
+		if err != nil {
+			f = -100000
+		}
+		c, err := strconv.ParseInt(s[4], 10, 0)
+		if err != nil {
+			c = 0
+		}
+		return s[0], float32(t) / 100.0, float32(p) / 100.0, float32(f) / 100.0, int(c)
+	}
+	return s[0], -1000.0, -1000.0, -1000.0, 0
 }

@@ -90,7 +90,6 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	entry.Use(gin.Recovery())
 	chat := entry.Group("/api")
 	chat.POST("/chat-process", BasicAuth(accountService, r.OpsLink), middlewares.RateLimitMiddleware(1, 2), chatService.ChatProcess)
-	chat.POST("/process", BasicAuth(accountService, r.OpsLink), middlewares.RateLimitMiddleware(1, 2), chatService.MessageProcess)
 	chat.POST("/config", func(ctx *gin.Context) {
 		ctx.JSON(200, gin.H{
 			"status": "Success",
