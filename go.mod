@@ -9,7 +9,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/google/uuid v1.3.0
 	github.com/karlseguin/ccache/v3 v3.0.3
-	github.com/sashabaranov/go-openai v1.4.2
+	github.com/sashabaranov/go-openai v1.37.0
 	github.com/spf13/cobra v1.6.0
 	golang.org/x/time v0.3.0
 	gorm.io/driver/mysql v1.5.1

@@ -103,6 +103,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	username := ctx.GetString("username")
 	user, err := chat.account.CheckUser(username)
 	if err != nil {
+		klog.Error(err)
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
 			"message": fmt.Sprintf("%v", err),
@@ -146,6 +147,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 
 	messages, numTokens, tokenCount, err := chat.buildMessage(payload, m, c)
 	if err != nil {
+		klog.Error(err)
 		ctx.JSON(200, gin.H{
 			"status":  "Fail",
 			"message": fmt.Sprintf("%v", err),
@@ -179,17 +181,6 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		return
 	}
 	defer stream.Close()
-
-	resp := stream.GetResponse()
-	if resp.StatusCode != 200 {
-		bts, _ := io.ReadAll(resp.Body)
-		ctx.JSON(200, gin.H{
-			"status":  "Fail",
-			"message": fmt.Sprintf("%v", string(bts)),
-			"data":    nil,
-		})
-		return
-	}
 
 	firstChunk := true
 	defer func() {

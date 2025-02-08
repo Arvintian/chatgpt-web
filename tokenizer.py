@@ -37,7 +37,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo"):
     """Returns the number of tokens used by a list of messages."""
     encoding = None
     if not model in support_models:  # note: let other model run
-        model = "gpt-4o"
+        return 0
     if model in encoding_cache:
         encoding = encoding_cache.get(model)
     else:
